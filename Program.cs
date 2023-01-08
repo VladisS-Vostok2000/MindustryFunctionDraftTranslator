@@ -16,34 +16,49 @@ namespace MindustyDraftToFunctionTranslator {
 
         public static void Main(string[] args) {
             if (args.Length == 0) {
-                Console.WriteLine($"Please give me path to {OldFilenameExtension} file.");
-                Console.ReadKey();
+                FinishAllDraftsInFolder();
                 return;
             }
 
-            string filePath = args[0];
-
-            string filepathExtension = GetExtension(filePath);
-            if (filepathExtension != OldFilenameExtension) {
-                Console.WriteLine($"Wrong filepath extension: \"{filepathExtension}\". Only \"{OldFilenameExtension}\" awailable.");
-                Console.ReadKey();
-                return;
-            }
-
-            string mindastryFunctionDraft;
-            using (StreamReader sr = new StreamReader(filePath)) {
-                mindastryFunctionDraft = sr.ReadToEnd();
-            }
-
-            string[] mindastryFunctionDraftLines = mindastryFunctionDraft.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
-            // mindastryFunctionDraftLines isnt empty
-            Finish(mindastryFunctionDraftLines);
-
-
-            WriteToFile(mindastryFunctionDraftLines, filePath);
+            FinishSingleFile(args[0]);
         }
 
 
+
+        private static void FinishSingleFile(string path) {
+            CheckFilenameExtension(path);
+            FinishFile(path);
+        }
+        private static void CheckFilenameExtension(string path) {
+            string filepathExtension = GetExtension(path);
+            if (filepathExtension != OldFilenameExtension) {
+                throw new InvalidDataException($"Wrong filepath extension: \"{filepathExtension}\". Only \"{OldFilenameExtension}\" awailable.");
+            }
+        }
+        private static string[] GetLines(string path) {
+            string mindastryFunctionDraft;
+            using (StreamReader sr = new StreamReader(path)) {
+                mindastryFunctionDraft = sr.ReadToEnd();
+            }
+
+            return mindastryFunctionDraft.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        }
+
+
+        private static void FinishAllDraftsInFolder() {
+            foreach (var filePath in Directory.EnumerateFiles(".", "*" + OldFilenameExtension, SearchOption.TopDirectoryOnly)) {
+                try {
+                    FinishFile(filePath);
+                }
+                catch (Exception e) { Console.WriteLine(GetFileName(filePath + ":")); Console.WriteLine(e.Message); Console.WriteLine(e.StackTrace); }
+            }
+        }
+        private static void FinishFile(string path) {
+            string[] mindastryFunctionDraftLines = GetLines(path);
+            // mindastryFunctionDraftLines result isnt empty
+            Finish(mindastryFunctionDraftLines);
+            WriteToFile(mindastryFunctionDraftLines, path);
+        }
 
         private static void Finish(string[] draft) {
             (Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) = GetDraftLabelsAndPointers(draft);
@@ -62,9 +77,6 @@ namespace MindustyDraftToFunctionTranslator {
                 }
 
                 draft[labeledLinesIndex] = draft[labeledLinesIndex].Substring(0, draft[labeledLinesIndex].IndexOf(Separator)).Trim();
-            }
-            for (int i = 0; i < draft.Length; i++) {
-                draft[i] = draft[i].Trim();
             }
         }
         private static (Dictionary<int, int>, Dictionary<int, int>) GetDraftLabelsAndPointers(string[] draft) {
@@ -157,28 +169,15 @@ namespace MindustyDraftToFunctionTranslator {
         }
 
         private static void WriteToFile(string[] sourse, string draftPath) {
-            string path = CastFilePath(draftPath);
-
-            using FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write);
+            using FileStream fs = new FileStream(ChangeExtension(draftPath, NewFilenameExtension), FileMode.Create, FileAccess.Write);
             StreamWriter sw = new StreamWriter(fs);
-            foreach (var line in sourse) {
-                sw.WriteLine(line);
+            for (int i = 0; i < sourse.Length - 1; i++) {
+                string line = sourse[i];
+                sw.WriteLine(line.Trim());
             }
+            sw.Write(sourse.Last().Trim());
 
             sw.Flush();
-        }
-        private static string CastFilePath(string draftPath) {
-            string fileName = GetFileName(draftPath);
-            int fileNameIndexInPath = draftPath.IndexOf(fileName);
-
-            // REFACTORING: повторяющийся код.
-            if (fileNameIndexInPath == 0) {
-                return fileName.Substring(0, fileName.IndexOf('.')) + NewFilenameExtension;
-            }
-            else {
-                return draftPath.Substring(0, fileNameIndexInPath) + // Path without file
-                    fileName.Substring(0, fileName.IndexOf('.')) + NewFilenameExtension;
-            }
         }
 
     }
