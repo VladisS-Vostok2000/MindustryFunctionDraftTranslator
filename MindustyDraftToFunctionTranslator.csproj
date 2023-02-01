@@ -6,4 +6,8 @@
     <StartupObject>MindustyDraftToFunctionTranslator.Program</StartupObject>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\BasicLibrary.Framework4.8\BasicLibrary.csproj" />
+  </ItemGroup>
+
 </Project>
