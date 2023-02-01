@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using static System.IO.Path;
+using BasicLibrary;
 
 namespace MindustyDraftToFunctionTranslator {
     public static class Program {
@@ -12,6 +14,10 @@ namespace MindustyDraftToFunctionTranslator {
         public const string Pointer = "->";
         public const int PointerIndex = 0;
         public const int LabelIndex = 1;
+        public const string UpperLineOperation = "sub";
+        public const string LowerLineOperation = "add";
+        public const int operationIndex = 1;
+
 
 
         public static void Main(string[] args) {
@@ -50,7 +56,7 @@ namespace MindustyDraftToFunctionTranslator {
                 try {
                     FinishFile(filePath);
                 }
-                catch (Exception e) { Console.WriteLine(GetFileName(filePath + ":")); Console.WriteLine(e.Message); Console.WriteLine(e.StackTrace); }
+                catch (InvalidDataException e) { Console.WriteLine(GetFileName(filePath + ":")); Console.WriteLine(e.Message); }
             }
         }
         private static void FinishFile(string path) {
@@ -64,20 +70,10 @@ namespace MindustyDraftToFunctionTranslator {
             (Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) = GetDraftLabelsAndPointers(draft);
             // labeledLines isnt empty
             // pointersLines isnt empty
-            Dictionary<int, string> linesPointerReplacementValue = GetPointersReplacements(labeledLines, pointersLines);
-            foreach (var pointerLineIndex in pointersLines.Keys) {
-                draft[pointerLineIndex] = draft[pointerLineIndex].Substring(0, draft[pointerLineIndex].IndexOf(Separator)).Trim().Replace(" n", " " + linesPointerReplacementValue[pointerLineIndex]);
-            }
-            foreach (var labeledLinesIndex in labeledLines.Keys) {
 
-                // It might me destroin by upper function.
-                int separatorLineIndex = draft[labeledLinesIndex].IndexOf(Separator);
-                if (separatorLineIndex == -1) {
-                    continue;
-                }
-
-                draft[labeledLinesIndex] = draft[labeledLinesIndex].Substring(0, draft[labeledLinesIndex].IndexOf(Separator)).Trim();
-            }
+            CheckValid(labeledLines, pointersLines);
+            Substitute(draft, labeledLines, pointersLines);
+            ClearLines(draft);
         }
         private static (Dictionary<int, int>, Dictionary<int, int>) GetDraftLabelsAndPointers(string[] draft) {
             Dictionary<int, int> labeledLines = new Dictionary<int, int>();
@@ -85,88 +81,141 @@ namespace MindustyDraftToFunctionTranslator {
 
             for (int i = 0; i < draft.Length; i++) {
                 string line = draft[i];
-                GetLineLabelsAndPointers(line, i, labeledLines, pointersLines);
+                if (line.Contains(Separator)) {
+                    InsertLineLabelsAndPointers(line, i, labeledLines, pointersLines);
+                }
             }
 
             return (labeledLines, pointersLines);
         }
-        private static void GetLineLabelsAndPointers(string line, int lineIndex, Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) {
-            if (line.Contains(Separator)) {
-                string[] @params = line.Substring(line.IndexOf(Separator) + 1).Split(Separator);
+        private static void InsertLineLabelsAndPointers(string line, int lineIndex, Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) {
+            string[] @params = line.Substring(line.IndexOf(Separator) + 1).Split(Separator);
 
-                // @params.Length > 0
-                if (@params.Length > 2) {
-                    throw new FormatException($"Too much params by separator \'{Separator}\' in line {lineIndex}: \"{line}\".");
+            // REFACTORING: дублирующийся код.
+            if (@params.Length > 2) {
+                throw new InvalidDataException($"Too much params by separator \'{Separator}\' on line {lineIndex}.");
+            }
+            else
+            if (@params.Length == 2) {
+                bool parsed = TryParseLabel(@params[LabelIndex], out int label);
+                if (!parsed) {
+                    throw new InvalidDataException($"Label expected as parameter on line {lineIndex}. Value was {@params[LabelIndex]}.");
                 }
-                else
-                if (@params.Length == 2) {
-                    labeledLines.Add(lineIndex, ParseLabelHere(@params[LabelIndex]));
-                    pointersLines.Add(lineIndex, ParsePointerHere(@params[PointerIndex]));
+                if (!labeledLines.ContainsValue(label)) {
+                    labeledLines.Add(lineIndex, label);
                 }
                 else {
-                    string param = @params[0];
-                    if (IsPointer(param)) {
-                        pointersLines.Add(lineIndex, ParsePointerHere(param));
+                    throw new InvalidDataException($"Several times same label. Label was {label} on lines {lineIndex} and {labeledLines.FirstKeyByValue(label)}");
+                }
+
+                parsed = TryParsePointer(@params[PointerIndex], out int pointer);
+                if (!parsed) {
+                    throw new InvalidDataException($"Pointer expected as parameter on line {lineIndex}. Value was {@params[PointerIndex]}.");
+                }
+                pointersLines.Add(lineIndex, pointer);
+            }
+            else {
+                string param = @params[0];
+                if (IsPointer(param)) {
+                    bool parsed = TryParsePointer(param, out int pointer);
+                    if (!parsed) {
+                        throw new InvalidDataException($"Pointer expected as parameter on line {lineIndex}. Value was {param}.");
+                    }
+                    pointersLines.Add(lineIndex, pointer);
+                }
+                else {
+                    bool parsed = TryParseLabel(param, out int label);
+                    if (!parsed) {
+                        throw new InvalidDataException($"Label or pointer expected as parameter on line {lineIndex}. Value was {param}.");
+                    }
+                    if (!labeledLines.ContainsValue(label)) {
+                        labeledLines.Add(lineIndex, label);
                     }
                     else {
-                        labeledLines.Add(lineIndex, ParseLabelHere(param));
+                        throw new InvalidDataException($"Several times same label. Label was {label} on lines {lineIndex} and {labeledLines.FirstKeyByValue(label)}");
                     }
                 }
-
-
-                int ParseLabelHere(string param) {
-                    return ParseLabel(param, lineIndex);
-                }
-                int ParsePointerHere(string param) {
-                    return ParsePointer(param, lineIndex);
-                }
             }
         }
-        private static int ParseLabel(string param, int lineIndex) {
-            try {
-                return int.Parse(param.Trim());
-            }
-            catch (FormatException) {
-                throw new FormatException($"Label expected in parameter \"{param}\" on line {lineIndex}.");
-            }
+        private static bool TryParseLabel(string param, out int result) {
+            return int.TryParse(param, out result);
         }
-        private static int ParsePointer(string param, int lineIndex) {
-            string cleanedParam = param.Trim();
-            int startIndex = param.IndexOf(Pointer) + Pointer.Length;
-            try {
-                return int.Parse(param.Substring(startIndex));
-            }
-            catch (FormatException) {
-                throw new FormatException($"Pointer expected in param \"{param}\" on line {lineIndex}.");
-            }
+        private static bool TryParsePointer(string param, out int pointer) {
+            return int.TryParse(param.Substring(param.IndexOf(Pointer) + Pointer.Length), out pointer);
         }
         private static bool IsPointer(string param) {
             return param.Contains(Pointer);
         }
 
-        private static Dictionary<int, string> GetPointersReplacements(Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) {
-            var outDic = new Dictionary<int, string>();
-            foreach (var pointerLineIndex in pointersLines.Keys) {
-                int labelLineIndex;
-                try {
-					labelLineIndex = labeledLines.First(pair => pair.Value.Equals(pointersLines[pointerLineIndex])).Key;
+        private static void CheckValid(Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) {
+            HashSet<int> hashTable = new HashSet<int>(labeledLines.Count);
+            foreach (var label in labeledLines.Values) {
+                if (!hashTable.Add(label)) {
+                    throw new InvalidDataException($"The same label declared several times. Label was {label}.");
                 }
-                catch (InvalidOperationException) {
-                    throw new InvalidDataException($"No label found for pointer \"{pointersLines[pointerLineIndex]}\".");
-                }
-				
-				int result;
-				if (pointerLineIndex < labelLineIndex) {
-					result = labelLineIndex - pointerLineIndex - 1;
-				}
-				else {
-					result = pointerLineIndex - labelLineIndex + 1;
-				}
-                outDic.Add(pointerLineIndex, result.ToString());
             }
 
-            return outDic;
+            foreach (var pointer in pointersLines.Values) {
+                if (!hashTable.Contains(pointer)) {
+                    throw new InvalidDataException($"The pointer points out on non-exist label. Pointer was {pointer}.");
+                }
+            }
         }
+
+        private static void Substitute(string[] draft, Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) {
+            foreach (var pointerLine in pointersLines) {
+                int pointerLineIndex = pointerLine.Key;
+                string instruction = draft[pointerLineIndex].Substring(0, draft[pointerLineIndex].IndexOf(Separator)).Trim();
+                string[] instructionParts = instruction.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (instructionParts[0] == "op" && instructionParts.Length >= 5) {
+                    int index;
+                    string operation;
+                    int lineIndexPointerPoints = labeledLines.FirstKeyByValue(pointerLine.Value);
+                    // REFACTORING: повторяющийся код.
+                    if (pointerLineIndex < lineIndexPointerPoints) {
+                        index = lineIndexPointerPoints - pointerLineIndex - 1;
+                        operation = LowerLineOperation;
+                    }
+                    else
+                    if (pointerLineIndex > lineIndexPointerPoints) {
+                        index = pointerLineIndex - lineIndexPointerPoints + 1;
+                        operation = UpperLineOperation;
+                    }
+                    else {
+                        throw new InvalidDataException($"Pointer points out the current line. Line was {pointerLineIndex}.");
+                    }
+
+                    instructionParts[1] = operation;
+                    instructionParts[instructionParts.GetUpperBound(0)] = index.ToString();
+                }
+                else {
+                    throw new InvalidDataException($"Unknown instruction type. Type was \"{instructionParts[0]}\" on line {pointerLineIndex}.");
+                }
+
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < instructionParts.Length - 1; i++) {
+                    string linePart = instructionParts[i];
+                    sb.Append(linePart + ' ');
+                }
+                sb.Append(instructionParts[instructionParts.GetUpperBound(0)]);
+
+                draft[pointerLineIndex] = sb.ToString();
+            }
+        }
+
+        private static void ClearLines(string[] draft) {
+            for (int i = 0; i < draft.Length; i++) {
+                string line = draft[i];
+                int separatorLineIndex = line.IndexOf(Separator);
+                string lineWithoutCode = line;
+                if (separatorLineIndex != -1) {
+                    lineWithoutCode = line.Substring(0, separatorLineIndex);
+                }
+
+                draft[i] = lineWithoutCode.Trim();
+            }
+        }
+
 
         private static void WriteToFile(string[] sourse, string draftPath) {
             using FileStream fs = new FileStream(ChangeExtension(draftPath, NewFilenameExtension), FileMode.Create, FileAccess.Write);

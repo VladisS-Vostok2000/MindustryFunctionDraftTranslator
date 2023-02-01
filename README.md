@@ -1,6 +1,5 @@
 ## MindustryFunctionDraftTranslator
-This translator just finishes `.minfndft` files to `.min` files, which both is just txt UTF-8 files
-generally mindastry instructions file contains.
+This translator just finishes `.minfndft` files to `.min` files, which both is just txt UTF-8 files generally mindastry instructions file contains.
 
 The `.min` file is ready to be copied into processor (you need to open it by usually text redactor) set of instructions.
 
@@ -15,18 +14,18 @@ Secondly, there is 2 notations for label and pointer: just a integer and `->` wi
 
 `print "All " #6`
 
-`op sub trueWay @counter n #->6`
+`op n trueWay @counter n #->6`
 
-`op sub falseWay @counter n #->7 #9`
+`op n falseWay @counter n #->7 #9`
 
-Third, it contains operation instructions with @counter ends with `n`.
+So it substitute operations on `op` instructions (`add` or `sub`) and digits on last `op` argument.
 
 ###### Using
 First of all, you need jump-like instruction with counter, which is, for example:
 
-`op sub trueWay @counter n`
+`op n trueWay @counter n`
 
-Where `n` is line you want instruction to jump. So you don't want to fill `n` manually. So you need
+The first `n` is operation you need to work with `counter`, the second `n` is `@counter` modificator. So you don't want to fill `n` manually. So you need
 label and pointer to set the program what to do.
 
 To set label just add separator and number of its label. Please use unique values for that. 
@@ -36,13 +35,10 @@ For example:
 `print "All "     #6`
 
 If you want to jump on these instruction, you need to place pointer into jump-like command:
-`op sub trueWay @counter n #->6`.
-Please remember: if labeled instruction is upper, use `sub` parameter in mindastry instruction,
-or `add` if lower accordingly. I might add auto-replasement later for that.
 
-There is `sub` so labeled line is upper.
+`op n trueWay @counter n #->6`
 
-Now run the program and get n automatically.
+Now run the program and get `n`'s automatically.
 
 If your line contains label and pointer, you need to place it in strict sequence:
 
@@ -52,6 +48,7 @@ If your line contains label and pointer, you need to place it in strict sequence
 There is two ways to run a program: by itself or from cmd.
 #### By itself
 Will finish all functions drafts in current program folder. Please remember that program is not only executable file.
+This way will not show problems in your files.
 #### From cmd
 You can run program from cmd by one or two parameters. It might requers administrator rules.
 ###### One parameter
