@@ -8,10 +8,12 @@ using BasicLibrary;
 
 namespace MindustyDraftToFunctionTranslator {
     public static class Program {
-        public const string OldFilenameExtension = ".minfndft";
+        public const string FunctionDraftExtension = ".minfndft";
+        public const string RawCodeExtension = ".minraw";
         public const string NewFilenameExtension = ".min";
         public const char Separator = '#';
         public const string Pointer = "->";
+        public const char ParameterToSubstitute = 'n';
         public const int PointerIndex = 0;
         public const int LabelIndex = 1;
         public const string UpperLineOperation = "sub";
@@ -32,14 +34,47 @@ namespace MindustyDraftToFunctionTranslator {
 
 
         private static void FinishSingleFile(string path) {
-            CheckFilenameExtension(path);
+            string filenameExtension = Path.GetExtension(path);
+            if (!SuitableFilenameExtension(filenameExtension)) {
+                throw new InvalidDataException($"Unsuitable filename extension. Only {RawCodeExtension} and {FunctionDraftExtension} suitable. Extension was {filenameExtension}.");
+            }
+
             FinishFile(path);
         }
-        private static void CheckFilenameExtension(string path) {
-            string filepathExtension = GetExtension(path);
-            if (filepathExtension != OldFilenameExtension) {
-                throw new InvalidDataException($"Wrong filepath extension: \"{filepathExtension}\". Only \"{OldFilenameExtension}\" awailable.");
+        private static void FinishAllDraftsInFolder() {
+            foreach (var filePath in Directory.EnumerateFiles(".", "*" + FunctionDraftExtension, SearchOption.TopDirectoryOnly)) {
+                try {
+                    FinishFile(filePath);
+                }
+                catch (InvalidDataException e) { Console.WriteLine(GetFileName(filePath + ":")); Console.WriteLine(e.Message); }
             }
+            foreach (var filePath in Directory.EnumerateFiles(".", "*" + RawCodeExtension, SearchOption.TopDirectoryOnly)) {
+                try {
+                    FinishFile(filePath);
+                }
+                catch (InvalidDataException e) { Console.WriteLine(GetFileName(filePath + ":")); Console.WriteLine(e.Message); }
+            }
+        }
+        private static bool SuitableFilenameExtension(string extension) {
+            if (extension == FunctionDraftExtension || extension == RawCodeExtension) {
+                return true;
+            }
+            else {
+                return false;
+            }
+        }
+        private static void FinishFile(string path) {
+            string[] code = GetLines(path);
+            // code isnt empty
+
+            (Dictionary<int, string> labeledLines, Dictionary<int, string> pointersLines) = GetDraftLabelsAndPointers(code);
+            CheckValidness(labeledLines, pointersLines);
+
+            FinishDraft(code, labeledLines, pointersLines);
+
+            ClearLines(code);
+            
+            WriteToFile(code, path);
         }
         private static string[] GetLines(string path) {
             string mindastryFunctionDraft;
@@ -49,35 +84,9 @@ namespace MindustyDraftToFunctionTranslator {
 
             return mindastryFunctionDraft.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
         }
-
-
-        private static void FinishAllDraftsInFolder() {
-            foreach (var filePath in Directory.EnumerateFiles(".", "*" + OldFilenameExtension, SearchOption.TopDirectoryOnly)) {
-                try {
-                    FinishFile(filePath);
-                }
-                catch (InvalidDataException e) { Console.WriteLine(GetFileName(filePath + ":")); Console.WriteLine(e.Message); }
-            }
-        }
-        private static void FinishFile(string path) {
-            string[] mindastryFunctionDraftLines = GetLines(path);
-            // mindastryFunctionDraftLines result isnt empty
-            Finish(mindastryFunctionDraftLines);
-            WriteToFile(mindastryFunctionDraftLines, path);
-        }
-
-        private static void Finish(string[] draft) {
-            (Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) = GetDraftLabelsAndPointers(draft);
-            // labeledLines isnt empty
-            // pointersLines isnt empty
-
-            CheckValid(labeledLines, pointersLines);
-            Substitute(draft, labeledLines, pointersLines);
-            ClearLines(draft);
-        }
-        private static (Dictionary<int, int>, Dictionary<int, int>) GetDraftLabelsAndPointers(string[] draft) {
-            Dictionary<int, int> labeledLines = new Dictionary<int, int>();
-            Dictionary<int, int> pointersLines = new Dictionary<int, int>();
+        private static (Dictionary<int, string>, Dictionary<int, string>) GetDraftLabelsAndPointers(string[] draft) {
+            Dictionary<int, string> labeledLines = new Dictionary<int, string>();
+            Dictionary<int, string> pointersLines = new Dictionary<int, string>();
 
             for (int i = 0; i < draft.Length; i++) {
                 string line = draft[i];
@@ -88,7 +97,7 @@ namespace MindustyDraftToFunctionTranslator {
 
             return (labeledLines, pointersLines);
         }
-        private static void InsertLineLabelsAndPointers(string line, int lineIndex, Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) {
+        private static void InsertLineLabelsAndPointers(string line, int lineIndex, Dictionary<int, string> labeledLines, Dictionary<int, string> pointersLines) {
             string[] @params = line.Substring(line.IndexOf(Separator) + 1).Split(Separator);
 
             // REFACTORING: дублирующийся код.
@@ -97,7 +106,7 @@ namespace MindustyDraftToFunctionTranslator {
             }
             else
             if (@params.Length == 2) {
-                bool parsed = TryParseLabel(@params[LabelIndex], out int label);
+                bool parsed = TryParseLabel(@params[LabelIndex], out string label);
                 if (!parsed) {
                     throw new InvalidDataException($"Label expected as parameter on line {lineIndex}. Value was {@params[LabelIndex]}.");
                 }
@@ -108,7 +117,7 @@ namespace MindustyDraftToFunctionTranslator {
                     throw new InvalidDataException($"Several times same label. Label was {label} on lines {lineIndex} and {labeledLines.FirstKeyByValue(label)}");
                 }
 
-                parsed = TryParsePointer(@params[PointerIndex], out int pointer);
+                parsed = TryParsePointer(@params[PointerIndex], out string pointer);
                 if (!parsed) {
                     throw new InvalidDataException($"Pointer expected as parameter on line {lineIndex}. Value was {@params[PointerIndex]}.");
                 }
@@ -117,14 +126,14 @@ namespace MindustyDraftToFunctionTranslator {
             else {
                 string param = @params[0];
                 if (IsPointer(param)) {
-                    bool parsed = TryParsePointer(param, out int pointer);
+                    bool parsed = TryParsePointer(param, out string pointer);
                     if (!parsed) {
                         throw new InvalidDataException($"Pointer expected as parameter on line {lineIndex}. Value was {param}.");
                     }
                     pointersLines.Add(lineIndex, pointer);
                 }
                 else {
-                    bool parsed = TryParseLabel(param, out int label);
+                    bool parsed = TryParseLabel(param, out string label);
                     if (!parsed) {
                         throw new InvalidDataException($"Label or pointer expected as parameter on line {lineIndex}. Value was {param}.");
                     }
@@ -137,37 +146,45 @@ namespace MindustyDraftToFunctionTranslator {
                 }
             }
         }
-        private static bool TryParseLabel(string param, out int result) {
-            return int.TryParse(param, out result);
+        private static bool TryParseLabel(string param, out string result) {
+            result = param.Trim();
+            return true;
         }
-        private static bool TryParsePointer(string param, out int pointer) {
-            return int.TryParse(param.Substring(param.IndexOf(Pointer) + Pointer.Length), out pointer);
+        private static bool TryParsePointer(string param, out string pointer) {
+            pointer = param.Substring(param.IndexOf(Pointer) + Pointer.Length).Trim();
+            return true;
         }
         private static bool IsPointer(string param) {
             return param.Contains(Pointer);
         }
 
-        private static void CheckValid(Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) {
-            HashSet<int> hashTable = new HashSet<int>(labeledLines.Count);
+        private static void CheckValidness(Dictionary<int, string> labeledLines, Dictionary<int, string> pointersLines) {
+            HashSet<string> labels = new HashSet<string>(labeledLines.Count);
             foreach (var label in labeledLines.Values) {
-                if (!hashTable.Add(label)) {
+                if (!labels.Add(label)) {
                     throw new InvalidDataException($"The same label declared several times. Label was {label}.");
                 }
             }
 
             foreach (var pointer in pointersLines.Values) {
-                if (!hashTable.Contains(pointer)) {
+                if (!labels.Contains(pointer)) {
                     throw new InvalidDataException($"The pointer points out on non-exist label. Pointer was {pointer}.");
+                }
+            }
+
+            foreach (var pointerLine in pointersLines) {
+                if (labeledLines.FirstKeyByValue(pointerLine.Value) == pointerLine.Key) {
+                    throw new InvalidDataException($"The pointer and label are on the same line. Line number was {pointerLine.Key}.");
                 }
             }
         }
 
-        private static void Substitute(string[] draft, Dictionary<int, int> labeledLines, Dictionary<int, int> pointersLines) {
+        private static void FinishDraft(string[] draft, IDictionary<int, string> labeledLines, IDictionary<int, string> pointersLines) {
             foreach (var pointerLine in pointersLines) {
                 int pointerLineIndex = pointerLine.Key;
                 string instruction = draft[pointerLineIndex].Substring(0, draft[pointerLineIndex].IndexOf(Separator)).Trim();
                 string[] instructionParts = instruction.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (instructionParts[0] == "op" && instructionParts.Length >= 5) {
+                if (instructionParts[0] == "op" && instructionParts.Length >= 5 && instructionParts[1] == ParameterToSubstitute.ToString() && instructionParts[4] == ParameterToSubstitute.ToString()) {
                     int index;
                     string operation;
                     int lineIndexPointerPoints = labeledLines.FirstKeyByValue(pointerLine.Value);
@@ -186,7 +203,11 @@ namespace MindustyDraftToFunctionTranslator {
                     }
 
                     instructionParts[1] = operation;
-                    instructionParts[instructionParts.GetUpperBound(0)] = index.ToString();
+                    instructionParts[4] = index.ToString();
+                }
+                else
+                if (instructionParts[0] == "jump" && instructionParts.Length >= 2 && instructionParts[1] == ParameterToSubstitute.ToString()) {
+                    instructionParts[1] = labeledLines.FirstKeyByValue(pointerLine.Value).ToString();
                 }
                 else {
                     throw new InvalidDataException($"Unknown instruction type. Type was \"{instructionParts[0]}\" on line {pointerLineIndex}.");
