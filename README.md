@@ -44,6 +44,12 @@ If your line contains label and pointer, you need to place it in strict sequence
 
 `op sub falseWay @counter n #->7 #9` - pointer first, label the second.
 
+Supportable commands are:
+
+`op n <labelName> @counter n`
+
+`jump n <other parameters>`
+
 ## Using program
 There is two ways to run a program: by itself or from cmd.
 #### By itself
